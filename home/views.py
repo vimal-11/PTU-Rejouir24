@@ -38,11 +38,8 @@ from .serializers import *
 
 
 
-# razorpay client
-razorpay_client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
-
-
-
+# # razorpay client
+# razorpay_client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
 
 
 @csrf_exempt
@@ -290,7 +287,7 @@ class RegistrationCreateView(generics.CreateAPIView):
             return Response(data,status=status.HTTP_201_CREATED)
         except IntegrityError:
         # Handle the case where a registration already exists for the given event and student
-            return Response({"error": "Registration already exists for this event and student."}, status=status.HTTP_403_BAD_REQUEST)
+            return Response({"error": "Registration already exists for this event and student."}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -369,20 +366,30 @@ class TeamMemberAddView(generics.UpdateAPIView):
         instance = self.get_object()
         print(instance)
         print(request.data)
-        student_name=request.data.get("team_member",{})[0].get("name")
-        try:
-            team_member=Students.objects.get(name=student_name)
-        except Students.DoesNotExist:
-            return Response({"message": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
-        data_dict={"team_member":team_member.id}
-        serializer = self.get_serializer(instance, data=data_dict, context={'instance': instance})
-        serializer.is_valid(raise_exception=True)
-        team_member = serializer.validated_data['team_member']
 
-        instance.team_member.add(team_member)
-        Registration.objects.create(event=instance.event, student=team_member)
+        team_members_data = request.data.get("team_member", [])
+        added_members = []
 
-        return Response({"message": "Team member added successfully"}, status=status.HTTP_200_OK)
+        for member_data in team_members_data:
+            student_name = member_data.get("name")
+
+        # student_name=request.data.get("team_member",{})[0].get("name")
+            try:
+                team_member=Students.objects.get(name=student_name)
+            except Students.DoesNotExist:
+                return Response({"message": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
+            data_dict={"team_member":team_member.id}
+            serializer = self.get_serializer(instance, data=data_dict, context={'instance': instance})
+            try:
+                serializer.is_valid(raise_exception=True)
+                team_member = serializer.validated_data['team_member']
+                Registration.objects.create(event=instance.event, student=team_member)
+                instance.team_member.add(team_member)
+                added_members.append(team_member.id)
+            except IntegrityError:
+                return Response({"message": "IntegrityError occurred"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({"message": f"Team members added successfully: {added_members}"}, status=status.HTTP_200_OK)
 
 
 
@@ -517,68 +524,68 @@ def feedback(request):
 
 
 
-class RazorpayPaymentView(APIView):
-    permission_classes = [permissions.AllowAny]
-    def post(self, request, format=None):
-        print(request.data)
-        student_id = request.data.get('student_id')
-        event_id = request.data.get('event_id')
-        amount = request.data.get('amount')*100  # Amount in paisa
-        # Get the student and event
-        try:
-            student = Students.objects.get(pk=student_id)
-            event = Events.objects.get(pk=event_id)
-        except (Students.DoesNotExist, Events.DoesNotExist):
-            return Response({'error': 'Student or Event not found'}, status=status.HTTP_404_NOT_FOUND)
+# class RazorpayPaymentView(APIView):
+#     permission_classes = [permissions.AllowAny]
+#     def post(self, request, format=None):
+#         print(request.data)
+#         student_id = request.data.get('student_id')
+#         event_id = request.data.get('event_id')
+#         amount = request.data.get('amount')*100  # Amount in paisa
+#         # Get the student and event
+#         try:
+#             student = Students.objects.get(pk=student_id)
+#             event = Events.objects.get(pk=event_id)
+#         except (Students.DoesNotExist, Events.DoesNotExist):
+#             return Response({'error': 'Student or Event not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        print(razorpay_client)
-        # Create an order
-        response = razorpay_client.order.create({'amount': amount, 'currency': 'INR'})
+#         print(razorpay_client)
+#         # Create an order
+#         response = razorpay_client.order.create({'amount': amount, 'currency': 'INR'})
 
-        # Construct the Razorpay Gateway URL
-        razorpay_gateway_url = f'https://api.razorpay.com/v1/payment?order_id={response.get("id")}'
+#         # Construct the Razorpay Gateway URL
+#         razorpay_gateway_url = f'https://api.razorpay.com/v1/payment?order_id={response.get("id")}'
 
-        try:
-            payment = Payment.objects.get(student=student, event=event)
-            payment.order_id = response.get('id')
-            payment.amount = response.get('amount')
-            payment.currency = response.get('currency')
-            payment.status = 'Pending'  # You can set an initial status
-            try:
-                payment.save()
-            except IntegrityError:
-                # Handle the case where an IntegrityError occurs (unique constraint violated)
-                # This could happen if a student retries payment
-                pass
+#         try:
+#             payment = Payment.objects.get(student=student, event=event)
+#             payment.order_id = response.get('id')
+#             payment.amount = response.get('amount')
+#             payment.currency = response.get('currency')
+#             payment.status = 'Pending'  # You can set an initial status
+#             try:
+#                 payment.save()
+#             except IntegrityError:
+#                 # Handle the case where an IntegrityError occurs (unique constraint violated)
+#                 # This could happen if a student retries payment
+#                 pass
 
-        except Payment.DoesNotExist:
-            # If no payment object exists, create a new one
-            # Save payment details to the database
-            payment = Payment.objects.create(
-                student=student,
-                event=event,
-                order_id=response.get('id'),
-                amount=response.get('amount'),
-                currency=response.get('currency'),
-                status='Pending'  # You can set an initial status
-            )
+#         except Payment.DoesNotExist:
+#             # If no payment object exists, create a new one
+#             # Save payment details to the database
+#             payment = Payment.objects.create(
+#                 student=student,
+#                 event=event,
+#                 order_id=response.get('id'),
+#                 amount=response.get('amount'),
+#                 currency=response.get('currency'),
+#                 status='Pending'  # You can set an initial status
+#             )
 
-        event_serializer = EventsSerializer(event)
-        student_serializer = StudentsSerializer(student)
-        event_name = event_serializer.data.get("title")
-        student_name = student_serializer.data.get("name")
+#         event_serializer = EventsSerializer(event)
+#         student_serializer = StudentsSerializer(student)
+#         event_name = event_serializer.data.get("title")
+#         student_name = student_serializer.data.get("name")
 
-        response_data = {
-                "razorpay_gateway_url": razorpay_gateway_url,
-                "callback_url": "https://api.icon-ptucse.in/api/callback",
-                "razorpay_key": settings.RAZORPAY_KEY_ID,
-                "order": response,
-                "event_name": event_name,
-                "student_name": student_name
-        }
+#         response_data = {
+#                 "razorpay_gateway_url": razorpay_gateway_url,
+#                 "callback_url": "https://api.icon-ptucse.in/api/callback",
+#                 "razorpay_key": settings.RAZORPAY_KEY_ID,
+#                 "order": response,
+#                 "event_name": event_name,
+#                 "student_name": student_name
+#         }
 
-        print(response_data)
-        return Response(response_data, status=status.HTTP_200_OK)
+#         print(response_data)
+#         return Response(response_data, status=status.HTTP_200_OK)
     
 
 
@@ -591,59 +598,59 @@ class RazorpayPaymentView(APIView):
 # }
 
 
-@csrf_exempt
-def order_callback(request):
-    if request.method == "POST":
-        try:
-            body_data = request.body.decode('utf-8')
-            res_data = json.loads(body_data)['response']
-            data = json.loads(res_data)
-            if "razorpay_signature" in data:
-                payment_verification = razorpay_client.utility.verify_payment_signature(data)
-                if payment_verification:
-                    order_id = data['razorpay_order_id']
-                    payment_inst = Payment.objects.get(order_id=order_id)
-                    payment_inst.status="Success"
-                    payment_inst.save()
-                    event = payment_inst.event
-                    student = payment_inst.student
-                    reg_obj = Registration.objects.get(event=event.id, student=student.id)
-                    reg_obj.is_paid = True
-                    reg_obj.save()
+# @csrf_exempt
+# def order_callback(request):
+#     if request.method == "POST":
+#         try:
+#             body_data = request.body.decode('utf-8')
+#             res_data = json.loads(body_data)['response']
+#             data = json.loads(res_data)
+#             if "razorpay_signature" in data:
+#                 payment_verification = razorpay_client.utility.verify_payment_signature(data)
+#                 if payment_verification:
+#                     order_id = data['razorpay_order_id']
+#                     payment_inst = Payment.objects.get(order_id=order_id)
+#                     payment_inst.status="Success"
+#                     payment_inst.save()
+#                     event = payment_inst.event
+#                     student = payment_inst.student
+#                     reg_obj = Registration.objects.get(event=event.id, student=student.id)
+#                     reg_obj.is_paid = True
+#                     reg_obj.save()
 
-                    if event.is_team:
-                        team_member_ids = []
-                        # Check if the paying student is a team member
-                        team = Teams.objects.filter(event=event.id, team_member=student.id).first()
-                        print("team member pay", team)
-                        if team:
-                            # Include the team lead in the list of team members
-                            team_member_ids = team.team_member.values_list('id', flat=True)
-                            team_member_ids = list(team_member_ids)
-                            team_member_ids.append(team.team_lead.id)
+#                     if event.is_team:
+#                         team_member_ids = []
+#                         # Check if the paying student is a team member
+#                         team = Teams.objects.filter(event=event.id, team_member=student.id).first()
+#                         print("team member pay", team)
+#                         if team:
+#                             # Include the team lead in the list of team members
+#                             team_member_ids = team.team_member.values_list('id', flat=True)
+#                             team_member_ids = list(team_member_ids)
+#                             team_member_ids.append(team.team_lead.id)
 
-                        else:
-                            # Check if the paying student is a team lead
-                            team = Teams.objects.filter(event=event.id, team_lead=student.id).first()
-                            print("team lead pay", team)
-                            if team:
-                                # Include all team members in the list, including the team lead
-                                team_member_ids = team.team_member.values_list('id', flat=True)
-                                team_member_ids = list(team_member_ids)
-                                team_member_ids.append(student.id)  # Append the team lead's ID
+#                         else:
+#                             # Check if the paying student is a team lead
+#                             team = Teams.objects.filter(event=event.id, team_lead=student.id).first()
+#                             print("team lead pay", team)
+#                             if team:
+#                                 # Include all team members in the list, including the team lead
+#                                 team_member_ids = team.team_member.values_list('id', flat=True)
+#                                 team_member_ids = list(team_member_ids)
+#                                 team_member_ids.append(student.id)  # Append the team lead's ID
 
-                         # Update the registration status for all team members
-                        if team_member_ids:
-                            with transaction.atomic():
-                                Registration.objects.filter(event=event.id, student__in=team_member_ids).update(is_paid=True)
+#                          # Update the registration status for all team members
+#                         if team_member_ids:
+#                             with transaction.atomic():
+#                                 Registration.objects.filter(event=event.id, student__in=team_member_ids).update(is_paid=True)
 
-                    return JsonResponse({"res":"success"})
-                    # Logic to perform is payment is successful
-                else:
-                    return JsonResponse({"res":"failed"})
-                        # Logic to perform is payment is unsuccessful
-        except Exception as e:
-            # Handle exceptions (e.g., log the error)
-            return JsonResponse({"status": "error", "message": str(e)})
+#                     return JsonResponse({"res":"success"})
+#                     # Logic to perform is payment is successful
+#                 else:
+#                     return JsonResponse({"res":"failed"})
+#                         # Logic to perform is payment is unsuccessful
+#         except Exception as e:
+#             # Handle exceptions (e.g., log the error)
+#             return JsonResponse({"status": "error", "message": str(e)})
 
-    return JsonResponse({"status": "invalid_method"})
+#     return JsonResponse({"status": "invalid_method"})

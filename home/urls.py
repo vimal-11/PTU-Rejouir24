@@ -33,6 +33,6 @@ urlpatterns = [
 
     path('feedback/', feedback, name='feedback'),
 
-    path('api/razorpay/', RazorpayPaymentView.as_view(), name='razorpay'),
-    path('api/callback/', order_callback, name='razorpay_callback'),
+    # path('api/razorpay/', RazorpayPaymentView.as_view(), name='razorpay'),
+    # path('api/callback/', order_callback, name='razorpay_callback'),
 ]
