@@ -495,6 +495,13 @@ def get_team_for_student_and_event(student, event):
             return None
 
 
+def get_reg_for_lead_and_event(lead, event):
+    '''function to get reg id for redirecting to event detail page after adding team'''
+    try:
+        reg = Registration.objects.get(event=event, student=lead)
+        return reg
+    except Registration.DoesNotExist:
+        return None
 
 
 
@@ -654,3 +661,23 @@ def feedback(request):
 #             return JsonResponse({"status": "error", "message": str(e)})
 
 #     return JsonResponse({"status": "invalid_method"})
+
+
+
+
+class TeamLeadRegDetailView(generics.RetrieveAPIView):
+    '''Class for retriving reg detail of a team after adding team member for redirecting to event detail page'''
+    queryset = Teams.objects.all()
+    serializer_class = RegisteredEventSerializer  # Create this serializer
+
+    def retrieve(self, request, *args, **kwargs):
+        team_id = kwargs.get('pk')
+        try:
+            team = Teams.objects.get(pk=team_id)
+        except Teams.DoesNotExist:
+            return Response({"error": "Team not found"}, status=404)
+        reg_obj = get_reg_for_lead_and_event(team.team_lead, team.event)
+        serializer = self.get_serializer(reg_obj)
+        return Response(serializer.data)
+
+
