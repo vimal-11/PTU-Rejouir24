@@ -36,6 +36,8 @@ urlpatterns = [
     # path('api/razorpay/', RazorpayPaymentView.as_view(), name='razorpay'),
     # path('api/callback/', order_callback, name='razorpay_callback'),
 
+    path('api/instamojo-payment/', InstamojoPaymentView.as_view(), name='instamojo-payment'),
+    path('api/instamojo-callback/', instamojo_callback, name='instamojo-callback'),
 
-     path('team-reg-detail/<int:pk>/', TeamLeadRegDetailView.as_view(), name='team-reg-detail'),
+    path('team-reg-detail/<int:pk>/', TeamLeadRegDetailView.as_view(), name='team-reg-detail'),
 ]
