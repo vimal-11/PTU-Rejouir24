@@ -28,6 +28,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.db.models import Q
 from django.db import IntegrityError, transaction
+from instamojo_wrapper import Instamojo
 import razorpay
 import json
 
@@ -679,5 +680,146 @@ class TeamLeadRegDetailView(generics.RetrieveAPIView):
         reg_obj = get_reg_for_lead_and_event(team.team_lead, team.event)
         serializer = self.get_serializer(reg_obj)
         return Response(serializer.data)
+
+
+
+
+
+
+
+class InstamojoPaymentView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, format=None):
+        # Your Instamojo credentials
+        api_key = 'your_instamojo_api_key'
+        auth_token = 'your_instamojo_auth_token'
+
+        instamojo = Instamojo(api_key=api_key, auth_token=auth_token, endpoint='https://www.instamojo.com/api/1.1/')
+
+        student_id = request.data.get('student_id')
+        event_id = request.data.get('event_id')
+        amount = request.data.get('amount')  # Amount in INR
+
+        try:
+            student = Students.objects.get(pk=student_id)
+            event = Events.objects.get(pk=event_id)
+        except (Students.DoesNotExist, Events.DoesNotExist):
+            return Response({'error': 'Student or Event not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Create a payment request with Instamojo
+        response = instamojo.payment_request_create(
+            amount=amount,
+            purpose=f"Payment for {event.title}",
+            buyer_name=student.name,
+            send_email=True,
+            email=student.email,
+            redirect_url='https://api.icon-ptucse.in/api/callback',  # Update with your redirect URL
+        )
+
+         # Try to get an existing payment object
+        try:
+            payment = Payment.objects.get(student=student, event=event)
+            # Update the existing payment object with the new details
+            payment.order_id = response.get('id')
+            payment.amount = response.get('amount')
+            payment.currency = response.get('currency')
+            payment.status = 'Pending'  # You can set an initial status
+            try:
+                payment.save()
+            except IntegrityError:
+                # Handle the case where an IntegrityError occurs (unique constraint violated)
+                # This could happen if a student retries payment
+                pass
+
+        except Payment.DoesNotExist:
+            # If no payment object exists, create a new one
+            # Save payment details to the database
+            payment = Payment.objects.create(
+                student=student,
+                event=event,
+                order_id=response.get('id'),
+                amount=response.get('amount'),
+                currency=response.get('currency'),
+                status='Pending'  # You can set an initial status
+            )
+
+        event_serializer = EventsSerializer(event)
+        student_serializer = StudentsSerializer(student)
+        event_name = event_serializer.data.get("title")
+        student_name = student_serializer.data.get("name")
+
+        response_data = {
+            "instamojo_gateway_url": response.get('longurl'),
+            "callback_url": "https://api.icon-ptucse.in/api/callback",
+            "instamojo_key": api_key,
+            "order": response,
+            "event_name": event_name,
+            "student_name": student_name
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+    
+
+
+
+
+@csrf_exempt
+def instamojo_callback(request):
+    if request.method == "POST":
+        try:
+            body_data = request.body.decode('utf-8')
+            data = json.loads(body_data)
+            payment_id = data['payment_request']['id']
+            status = data['payment_request']['status']
+
+            if status == 'Completed':
+                payment_inst = Payment.objects.get(order_id=payment_id)
+                payment_inst.status = 'Success'
+                payment_inst.save()
+
+                event = payment_inst.event
+                student = payment_inst.student
+                reg_obj = Registration.objects.get(event=event.id, student=student.id)
+                reg_obj.is_paid = True
+                reg_obj.save()
+
+                if event.is_team:
+                    team_member_ids = []
+                    # Check if the paying student is a team member
+                    team = Teams.objects.filter(event=event.id, team_member=student.id).first()
+                    print("team member pay", team)
+                    if team:
+                        # Include the team lead in the list of team members
+                        team_member_ids = team.team_member.values_list('id', flat=True)
+                        team_member_ids = list(team_member_ids)
+                        team_member_ids.append(team.team_lead.id)
+
+                    else:
+                        # Check if the paying student is a team lead
+                        team = Teams.objects.filter(event=event.id, team_lead=student.id).first()
+                        print("team lead pay", team)
+                        if team:
+                            # Include all team members in the list, including the team lead
+                            team_member_ids = team.team_member.values_list('id', flat=True)
+                            team_member_ids = list(team_member_ids)
+                            team_member_ids.append(student.id)  # Append the team lead's ID
+
+                        # Update the registration status for all team members
+                    if team_member_ids:
+                        with transaction.atomic():
+                            Registration.objects.filter(event=event.id, student__in=team_member_ids).update(is_paid=True)
+
+                return JsonResponse({"res":"success"})
+
+            else:
+                return JsonResponse({"res": "failed"})
+
+        except Exception as e:
+            # Handle exceptions (e.g., log the error)
+            return JsonResponse({"status": "error", "message": str(e)})
+
+    return JsonResponse({"status": "invalid_method"})
+
 
 
