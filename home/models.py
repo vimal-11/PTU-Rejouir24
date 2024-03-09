@@ -73,9 +73,9 @@ class Students(models.Model):
 class Events(models.Model):
 
     CATEGORY_CHOICES = [
-        ('Technical', 'Technical'),
-        ('Non-Technical', 'Non-Technical'),
-        ('Cultural', 'Cultural'),
+        ('Day1', 'Day1'),
+        ('Day2', 'Day2'),
+        ('Day3', 'Day3'),
     ]
     title = models.CharField(max_length=200)
     category = models.CharField(max_length=30, choices=CATEGORY_CHOICES, default='O')
@@ -90,7 +90,7 @@ class Events(models.Model):
     rules = RichTextField(blank=True, null=True)
 
 
-    def __str__(self):
+    def _str_(self):
         return self.title
 
 
