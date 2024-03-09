@@ -27,7 +27,7 @@ SECRET_KEY = 'django-insecure-qc&&b757i*_^3w0am0=y3enzwb8*=xj50%pc*k!@4)zh_a+52y
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['api.rejouirptu.in', 'www.api.rejouirptu.in', 'rejouirptu.in', 'www.rejouirptu.in', '127.0.0.1', '118.139.177.46']
 
 
 # Application definition
@@ -104,8 +104,8 @@ DATABASES = {
 
     # 'default': {
     #     'ENGINE': 'django.db.backends.mysql',
-    #     'NAME': 'icon23',
-    #     'USER': 'admin',
+    #     'NAME': 'rejouir_db',
+    #     'USER': 'rejouir_admin',
     #     'PASSWORD': config('DB_PASSWORD'),
     #     'HOST': 'localhost',
     #     'PORT': '3306',
