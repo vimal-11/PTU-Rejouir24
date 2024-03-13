@@ -58,7 +58,7 @@ admin.site.register(FacultyIncharge, FacultyInchargeAdmin)
 class RegistrationAdmin(admin.ModelAdmin):
     list_filter = ['event', 'student', 'is_paid']
     list_display = ['event', 'student', 'registered_at', 'is_paid', 'is_reported']
-    search_fields = ['event', 'student']
+    search_fields = ['event__title', 'student__name']
 
     class Meta:
         model = Registration
@@ -70,7 +70,7 @@ admin.site.register(Registration, RegistrationAdmin)
 class TeamsAdmin(admin.ModelAdmin):
     list_filter = ['team_lead', 'team_member', 'event']
     list_display = ['team_lead', 'event']
-    search_fields = ['team_lead', 'team_member', 'event']
+    search_fields = ['team_lead__name', 'team_member__name', 'event__title']
 
     class Meta:
         model = Teams

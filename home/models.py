@@ -90,7 +90,7 @@ class Events(models.Model):
     rules = RichTextField(blank=True, null=True)
 
 
-    def _str_(self):
+    def __str__(self):
         return self.title
 
 
